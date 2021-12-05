@@ -3,11 +3,9 @@ import bs58 from './bs58';
 
 // TODO: Make sure this polyfill not included when not required
 import * as encoding from "text-encoding-utf-8";
-const TextDecoder =
-  typeof (global as any).TextDecoder !== "function"
-    ? encoding.TextDecoder
-    : (global as any).TextDecoder;
-const textDecoder = new TextDecoder("utf-8", { fatal: true });
+const ResolvedTextDecoder =
+  typeof TextDecoder !== "function" ? encoding.TextDecoder : TextDecoder;
+const textDecoder = new ResolvedTextDecoder("utf-8", { fatal: true });
 
 export function baseEncode(value: Uint8Array | string): string {
   if (typeof value === "string") {
@@ -291,6 +289,14 @@ function serializeField(
           }
           break;
         }
+        case "map": {
+          writer.writeU32(value.size);
+          value.forEach((val, key) => {
+            serializeField(schema, fieldName, key, fieldType.key, writer);
+            serializeField(schema, fieldName, val, fieldType.value, writer);
+          });
+          break;
+        }
         default:
           throw new BorshError(`FieldType ${fieldType} unrecognized`);
       }
@@ -383,6 +389,21 @@ function deserializeField(
       }
 
       return undefined;
+    }
+    if (fieldType.kind === "map") {
+      let map = new Map();
+      const length = reader.readU32();
+      for (let i = 0; i < length; i++) {
+        const key = deserializeField(schema, fieldName, fieldType.key, reader);
+        const val = deserializeField(
+          schema,
+          fieldName,
+          fieldType.value,
+          reader
+        );
+        map.set(key, val);
+      }
+      return map;
     }
 
     return deserializeStruct(schema, fieldType, reader);
